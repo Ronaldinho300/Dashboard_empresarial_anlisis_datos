@@ -8,7 +8,9 @@ from Dashboard_empresarial_anlisis_datos.cargar import (
     guardar_archivo, leer_archivo, leer_archivo_guardado, listar_archivos, validar_datos,
 )
 from Dashboard_empresarial_anlisis_datos.normalizar import normalizar_datos
-from Dashboard_empresarial_anlisis_datos.visualizar import crear_figura_interactiva, plotly_to_html
+from Dashboard_empresarial_anlisis_datos.visualizar import (
+    crear_figura_interactiva, plotly_to_html, resumen_estadistico_grafico,
+)
 
 class State(rx.State):
     """Valores serializables que la interfaz puede mostrar."""
@@ -50,6 +52,7 @@ class State(rx.State):
     eje_y: str = "venta"
     datos_grafico: go.Figure = go.Figure()  # objeto de figura, renderizado con rx.plotly
     resumen_grafico: str = ""
+    resumen_estadistico: list[dict] = []
 
     # --- Reportes ---
     reportes: list[dict] = []  # cada reporte: {nombre, fecha, contenido_html, global}
@@ -65,6 +68,31 @@ class State(rx.State):
 
     def set_vista_activa(self, valor: str):
         self.vista_activa = valor
+
+    def ir_a_grafico(self, tipo: str):
+        """Cambia a la vista de gráficos y prepara la visualización del dato del resumen."""
+        self.vista_activa = "graficos"
+        if tipo == "producto":
+            self.tipo_grafico = "barras"
+            self.eje_x = "producto"
+            self.eje_y = "venta"
+        elif tipo == "categoria":
+            self.tipo_grafico = "barras"
+            self.eje_x = "categoria"
+            self.eje_y = "venta"
+        elif tipo == "sede":
+            self.tipo_grafico = "barras"
+            self.eje_x = "sede"
+            self.eje_y = "venta"
+        elif tipo == "mes":
+            self.tipo_grafico = "lineas"
+            self.eje_x = "mes"
+            self.eje_y = "venta"
+        else:
+            return
+        datos = self._df if not self._df.empty else self._df_base
+        if not datos.empty:
+            self._actualizar_grafico_principal(datos)
 
     def set_filtro_producto(self, valor: str):
         self.filtro_producto = valor
@@ -94,6 +122,7 @@ class State(rx.State):
         if datos.empty:
             return
         self.datos_grafico = crear_figura_interactiva(datos, self.tipo_grafico, self.eje_x, self.eje_y)
+        self.resumen_estadistico = resumen_estadistico_grafico(datos, self.eje_x, self.eje_y)
         self.resumen_grafico = f"Gráfico de {self.eje_y} por {self.eje_x}. Registros filtrados: {len(datos)}."
 
     def _analizar_archivo(self, datos: pd.DataFrame, nombre: str):

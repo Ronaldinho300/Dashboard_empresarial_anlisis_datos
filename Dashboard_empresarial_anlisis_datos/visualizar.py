@@ -66,6 +66,58 @@ def _figura_vacia(mensaje: str) -> go.Figure:
     return _aplicar_tema(fig)
 
 
+def _preparar_eje(datos: pd.DataFrame, eje_x: str) -> tuple[pd.DataFrame, str]:
+    """Convierte fechas a mes/fecha para que el eje de gráfico siempre tenga valores válidos."""
+    datos = datos.copy()
+    if "fecha" in datos.columns:
+        datos["fecha"] = pd.to_datetime(datos["fecha"], dayfirst=True, errors="coerce")
+    if eje_x == "fecha" and "fecha" in datos.columns:
+        datos["fecha_str"] = datos["fecha"].dt.strftime("%Y-%m-%d")
+        return datos, "fecha_str"
+    if eje_x == "mes" and "fecha" in datos.columns:
+        datos["mes"] = datos["fecha"].dt.to_period("M").astype(str)
+        return datos, "mes"
+    return datos, eje_x
+
+
+def resumen_estadistico_grafico(df: pd.DataFrame, eje_x: str, eje_y: str) -> list[dict]:
+    """Devuelve el resumen estadístico del eje Y para la combinación seleccionada."""
+    datos, eje_x_real = _preparar_eje(df, eje_x)
+    if eje_x_real not in datos.columns or eje_y not in datos.columns:
+        return [
+            {"titulo": "Máximo", "valor": "N/A"},
+            {"titulo": "Mínimo", "valor": "N/A"},
+            {"titulo": "Media", "valor": "N/A"},
+            {"titulo": "Moda", "valor": "N/A"},
+        ]
+
+    agregado = _agrupar(datos, eje_x_real, eje_y)
+    if agregado.empty:
+        return [
+            {"titulo": "Máximo", "valor": "N/A"},
+            {"titulo": "Mínimo", "valor": "N/A"},
+            {"titulo": "Media", "valor": "N/A"},
+            {"titulo": "Moda", "valor": "N/A"},
+        ]
+
+    serie = pd.to_numeric(agregado[eje_y], errors="coerce").dropna()
+    if serie.empty:
+        return [
+            {"titulo": "Máximo", "valor": "N/A"},
+            {"titulo": "Mínimo", "valor": "N/A"},
+            {"titulo": "Media", "valor": "N/A"},
+            {"titulo": "Moda", "valor": "N/A"},
+        ]
+
+    moda = serie.mode()
+    return [
+        {"titulo": "Máximo", "valor": f"{serie.max():,.2f}"},
+        {"titulo": "Mínimo", "valor": f"{serie.min():,.2f}"},
+        {"titulo": "Media", "valor": f"{serie.mean():,.2f}"},
+        {"titulo": "Moda", "valor": f"{moda.iloc[0]:,.2f}" if not moda.empty else "N/A"},
+    ]
+
+
 def crear_figura_interactiva(df: pd.DataFrame, tipo: str, eje_x: str, eje_y: str) -> go.Figure:
     """Crea y devuelve una figura Plotly (objeto go.Figure) según el tipo y los ejes elegidos.
 
@@ -73,7 +125,20 @@ def crear_figura_interactiva(df: pd.DataFrame, tipo: str, eje_x: str, eje_y: str
     rx.plotly, que sí ejecuta correctamente los gráficos interactivos en Reflex.
     """
     datos = df.copy()
-    if datos.empty or eje_x not in datos.columns or eje_y not in datos.columns:
+    if datos.empty:
+        return _figura_vacia("No hay datos para la combinación seleccionada")
+
+    if "fecha" in datos.columns:
+        datos["fecha"] = pd.to_datetime(datos["fecha"], dayfirst=True, errors="coerce")
+
+    if eje_x == "fecha" and "fecha" in datos.columns:
+        datos["fecha_str"] = datos["fecha"].dt.strftime("%Y-%m-%d")
+        eje_x = "fecha_str"
+
+    if eje_x == "mes" and "fecha" in datos.columns:
+        datos["mes"] = datos["fecha"].dt.to_period("M").astype(str)
+
+    if eje_x not in datos.columns or eje_y not in datos.columns:
         return _figura_vacia("No hay datos para la combinación seleccionada")
 
     if tipo == "velas":
@@ -118,11 +183,6 @@ def crear_figura_interactiva(df: pd.DataFrame, tipo: str, eje_x: str, eje_y: str
         return _aplicar_tema(fig)
 
     # Para líneas, barras y cualquier otra combinación de ejes.
-    if eje_x == "fecha" and "fecha" in datos.columns:
-        datos["fecha"] = pd.to_datetime(datos["fecha"], dayfirst=True, errors="coerce")
-        datos["fecha_str"] = datos["fecha"].dt.strftime("%Y-%m-%d")
-        eje_x = "fecha_str"
-
     agrupado = _agrupar(datos, eje_x, eje_y)
     if agrupado.empty:
         return _figura_vacia("No hay datos para la combinación seleccionada")

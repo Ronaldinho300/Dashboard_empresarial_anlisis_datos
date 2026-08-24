@@ -36,8 +36,8 @@ def estado_vacio(mensaje: str, icon: str = "inbox") -> rx.Component:
     )
 
 
-def kpi(icon: str, titulo: str, valor, accent: str = ACCENT) -> rx.Component:
-    return rx.box(
+def kpi(icon: str, titulo: str, valor, accent: str = ACCENT, on_click=None) -> rx.Component:
+    contenido = rx.box(
         rx.hstack(
             rx.icon(tag=icon, size=14, color=accent),
             rx.text(titulo, style=LABEL_STYLE),
@@ -50,8 +50,12 @@ def kpi(icon: str, titulo: str, valor, accent: str = ACCENT) -> rx.Component:
             "border_left": f"2px solid {accent}",
             "min_width": "185px",
             "flex": "1",
+            "cursor": "pointer" if on_click else "default",
         },
     )
+    if on_click is None:
+        return contenido
+    return rx.box(contenido, on_click=on_click, style={"width": "100%"})
 
 
 # --------------------------------------------------------------- navegación
@@ -61,7 +65,7 @@ def nav_icon(vista: str, icon: str, tooltip: str) -> rx.Component:
     return rx.tooltip(
         rx.box(
             rx.icon(tag=icon, size=19, color=rx.cond(activo, ACCENT, TEXT_MUTED)),
-            on_click=State.set_vista_activa(vista),
+            on_click=lambda: State.set_vista_activa(vista),
             style={
                 "display": "flex",
                 "align_items": "center",
@@ -210,15 +214,31 @@ def ventana_resumen() -> rx.Component:
             wrap="wrap", spacing="3", width="100%",
         ),
         rx.hstack(
-            kpi("trending_up", "Producto más vendido", State.producto_mas_vendido, POSITIVE),
-            kpi("trending_down", "Producto menos vendido", State.producto_menos_vendido, NEGATIVE),
-            kpi("map_pin", "Sede más productiva", State.sede_mayor_venta, ACCENT),
+            kpi("trending_up", "Producto más vendido", State.producto_mas_vendido, POSITIVE, on_click=lambda: State.ir_a_grafico("producto")),
+            kpi("trending_down", "Producto menos vendido", State.producto_menos_vendido, NEGATIVE, on_click=lambda: State.ir_a_grafico("producto")),
+            kpi("map_pin", "Sede más productiva", State.sede_mayor_venta, ACCENT, on_click=lambda: State.ir_a_grafico("sede")),
             wrap="wrap", spacing="3", width="100%",
         ),
         rx.text(f"Columnas: {State.columnas}  ·  Registros: {State.filas}", style={
             "color": TEXT_MUTED, "font_family": FONT_MONO, "font_size": "0.78rem",
         }),
         width="100%", spacing="4", style=PANEL_STYLE,
+    )
+
+
+def tarjeta_estadistica(titulo: str, valor: str, accent: str) -> rx.Component:
+    return rx.vstack(
+        rx.text(titulo, style={"color": TEXT_MUTED, "font_size": "0.7rem", "letter_spacing": "0.08em", "text_transform": "uppercase"}),
+        rx.text(valor, style={"color": TEXT_PRIMARY, "font_family": FONT_MONO, "font_size": "1rem", "font_weight": "600"}),
+        spacing="1",
+        style={
+            **PANEL_STYLE,
+            "padding": "0.8em 1em",
+            "border_left": f"2px solid {accent}",
+            "min_width": "130px",
+            "flex": "1",
+            "background": BG_PANEL,
+        },
     )
 
 
@@ -229,10 +249,22 @@ def ventana_graficos() -> rx.Component:
             rx.vstack(rx.text("Tipo", style=LABEL_STYLE), rx.select(["barras", "lineas", "cascada", "velas"], value=State.tipo_grafico, on_change=State.set_tipo_grafico)),
             rx.vstack(rx.text("Eje X", style=LABEL_STYLE), rx.select(["fecha", "mes", "producto", "sede", "categoria"], value=State.eje_x, on_change=State.set_eje_x)),
             rx.vstack(rx.text("Eje Y", style=LABEL_STYLE), rx.select(["venta", "cantidad", "precio"], value=State.eje_y, on_change=State.set_eje_y)),
-            rx.vstack(rx.text("Producto", style=LABEL_STYLE), rx.select(State.productos_disponibles, value=State.filtro_producto, on_change=State.set_filtro_producto)),
-            rx.vstack(rx.text("Ciudad", style=LABEL_STYLE), rx.select(State.ciudades_disponibles, value=State.filtro_ciudad, on_change=State.set_filtro_ciudad)),
-            rx.vstack(rx.text("Desde", style=LABEL_STYLE), rx.input(type="date", value=State.fecha_inicio, on_change=State.set_fecha_inicio)),
-            rx.vstack(rx.text("Hasta", style=LABEL_STYLE), rx.input(type="date", value=State.fecha_fin, on_change=State.set_fecha_fin)),
+            rx.cond(
+                State.eje_x != "producto",
+                rx.vstack(rx.text("Producto", style=LABEL_STYLE), rx.select(State.productos_disponibles, value=State.filtro_producto, on_change=State.set_filtro_producto)),
+            ),
+            rx.cond(
+                State.eje_x != "sede",
+                rx.vstack(rx.text("Ciudad", style=LABEL_STYLE), rx.select(State.ciudades_disponibles, value=State.filtro_ciudad, on_change=State.set_filtro_ciudad)),
+            ),
+            rx.cond(
+                (State.eje_x != "fecha") & (State.eje_x != "mes"),
+                rx.vstack(rx.text("Desde", style=LABEL_STYLE), rx.input(type="date", value=State.fecha_inicio, on_change=State.set_fecha_inicio)),
+            ),
+            rx.cond(
+                (State.eje_x != "fecha") & (State.eje_x != "mes"),
+                rx.vstack(rx.text("Hasta", style=LABEL_STYLE), rx.input(type="date", value=State.fecha_fin, on_change=State.set_fecha_fin)),
+            ),
             rx.button(rx.icon(tag="filter", size=15), "Aplicar", on_click=State.aplicar_filtros),
             align="end", wrap="wrap", spacing="4", width="100%",
         ),
@@ -240,27 +272,51 @@ def ventana_graficos() -> rx.Component:
             rx.plotly(data=State.datos_grafico, width="100%", height="480px"),
             style={"width": "100%", "background": BG_RAISED, "border_radius": "10px", "padding": "0.5em"},
         ),
+        rx.hstack(
+            rx.foreach(
+                State.resumen_estadistico,
+                lambda item: rx.cond(
+                    item["titulo"] == "Máximo",
+                    tarjeta_estadistica(item["titulo"], item["valor"], ACCENT),
+                    rx.cond(
+                        item["titulo"] == "Mínimo",
+                        tarjeta_estadistica(item["titulo"], item["valor"], ACCENT_BLUE),
+                        rx.cond(
+                            item["titulo"] == "Media",
+                            tarjeta_estadistica(item["titulo"], item["valor"], ACCENT_AMBER),
+                            tarjeta_estadistica(item["titulo"], item["valor"], ACCENT_VIOLET),
+                        ),
+                    ),
+                ),
+            ),
+            spacing="3",
+            wrap="wrap",
+            width="100%",
+        ),
         rx.text(State.resumen_grafico, style={"color": TEXT_MUTED, "font_family": FONT_MONO, "font_size": "0.78rem"}),
         width="100%", spacing="4", style=PANEL_STYLE,
     )
 
 
-def bloque_analisis(icon: str, pregunta: str, interpretacion, decision, accent: str) -> rx.Component:
-    return rx.vstack(
+def bloque_analisis(icon: str, pregunta: str, interpretacion, decision, accent: str, on_click=None) -> rx.Component:
+    contenido = rx.vstack(
         rx.hstack(rx.icon(tag=icon, size=15, color=accent), rx.text(pregunta, weight="bold", style={"color": TEXT_PRIMARY, "font_size": "0.88rem"}), spacing="2", align="center"),
         rx.text(interpretacion, style={"color": TEXT_MUTED, "font_size": "0.85rem"}),
         rx.hstack(rx.icon(tag="arrow_up_right", size=13, color=accent), rx.text(decision, style={"color": accent, "font_size": "0.85rem"}), spacing="2", align="center"),
-        style={**PANEL_STYLE, "background": BG_RAISED, "border_left": f"2px solid {accent}"},
+        style={**PANEL_STYLE, "background": BG_RAISED, "border_left": f"2px solid {accent}", "cursor": "pointer" if on_click else "default"},
         align="start", spacing="2", width="100%",
     )
+    if on_click is None:
+        return contenido
+    return rx.box(contenido, on_click=on_click, style={"width": "100%"})
 
 
 def ventana_analisis() -> rx.Component:
     return rx.vstack(
         panel_header("brain_circuit", "Análisis e interpretación"),
-        bloque_analisis("package", "¿Qué producto debería recibir mayor stock?", State.interpretacion_stock, State.decision_stock, ACCENT_AMBER),
-        bloque_analisis("tag", "¿Qué categoría debería recibir mayor inversión?", State.interpretacion_categoria, State.decision_categoria, ACCENT_VIOLET),
-        bloque_analisis("map_pin", "¿Qué sede tiene mejor rendimiento?", State.interpretacion_sede, State.decision_sede, POSITIVE),
+        bloque_analisis("package", "¿Qué producto debería recibir mayor stock?", State.interpretacion_stock, State.decision_stock, ACCENT_AMBER, on_click=lambda: State.ir_a_grafico("producto")),
+        bloque_analisis("tag", "¿Qué categoría debería recibir mayor inversión?", State.interpretacion_categoria, State.decision_categoria, ACCENT_VIOLET, on_click=lambda: State.ir_a_grafico("categoria")),
+        bloque_analisis("map_pin", "¿Qué sede tiene mejor rendimiento?", State.interpretacion_sede, State.decision_sede, POSITIVE, on_click=lambda: State.ir_a_grafico("sede")),
         width="100%", spacing="3", style=PANEL_STYLE,
     )
 
@@ -290,8 +346,8 @@ def ventana_reportes() -> rx.Component:
                     rx.icon(tag="file_text", size=15, color=ACCENT),
                     rx.text(reporte["nombre"], style={"color": TEXT_PRIMARY, "font_family": FONT_MONO, "font_size": "0.82rem"}),
                     rx.spacer(),
-                    rx.icon_button(rx.icon(tag="download", size=14), on_click=lambda: State.descargar_reporte(reporte["nombre"]), variant="ghost", size="1"),
-                    rx.icon_button(rx.icon(tag="trash_2", size=14), on_click=lambda: State.eliminar_reporte(reporte["nombre"]), variant="ghost", color_scheme="red", size="1"),
+                    rx.icon_button(rx.icon(tag="download", size=14), on_click=lambda nombre=reporte["nombre"]: State.descargar_reporte(nombre), variant="ghost", size="1"),
+                    rx.icon_button(rx.icon(tag="trash_2", size=14), on_click=lambda nombre=reporte["nombre"]: State.eliminar_reporte(nombre), variant="ghost", color_scheme="red", size="1"),
                     align="center", width="100%",
                     style={"background": BG_RAISED, "border": f"1px solid {BORDER}", "border_radius": "8px", "padding": "0.6em 1em"},
                 ),
